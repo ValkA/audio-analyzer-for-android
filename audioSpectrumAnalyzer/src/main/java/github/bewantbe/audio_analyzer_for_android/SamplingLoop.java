@@ -15,14 +15,25 @@
 
 package github.bewantbe.audio_analyzer_for_android;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.audiofx.AutomaticGainControl;
 import android.os.Build;
 import android.os.SystemClock;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
+import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.UUID;
+
+import github.bewantbe.audio_analyzer_for_android.recorders.AudioRecorder;
+import github.bewantbe.audio_analyzer_for_android.recorders.BluetoothAccelerometerRecorder;
+import github.bewantbe.audio_analyzer_for_android.recorders.IRecorder;
 
 /**
  * Read a snapshot of audio data at a regular interval, and compute the FFT
@@ -135,7 +146,7 @@ class SamplingLoop extends Thread {
 
     @Override
     public void run() {
-        AudioRecord record;
+        IRecorder irecord = null;
 
         long tStart = SystemClock.uptimeMillis();
         try {
@@ -169,52 +180,93 @@ class SamplingLoop extends Thread {
         // tolerate up to about 1 sec.
         bufferSampleSize = (int)Math.ceil(1.0 * analyzerParam.sampleRate / bufferSampleSize) * bufferSampleSize;
 
-        // Use the mic with AGC turned off. e.g. VOICE_RECOGNITION for measurement
-        // The buffer size here seems not relate to the delay.
-        // So choose a larger size (~1sec) so that overrun is unlikely.
-        try {
-            if (analyzerParam.audioSourceId < 1000) {
-                record = new AudioRecord(analyzerParam.audioSourceId, analyzerParam.sampleRate, AudioFormat.CHANNEL_IN_MONO,
-                        AudioFormat.ENCODING_PCM_16BIT, analyzerParam.BYTE_OF_SAMPLE * bufferSampleSize);
-            } else {
-                record = new AudioRecord(analyzerParam.RECORDER_AGC_OFF, analyzerParam.sampleRate, AudioFormat.CHANNEL_IN_MONO,
-                        AudioFormat.ENCODING_PCM_16BIT, analyzerParam.BYTE_OF_SAMPLE * bufferSampleSize);
+
+        if(analyzerParam.audioSourceId==10){
+            Log.i("VIBROMETER_VALKA", "VIBROMETER_VALKA");
+            analyzerParam.sampleRate = 1000;//1000HZ by MPU6050
+            //TODO: connect to bluetooth here (while blocking the thread)
+            String address = PreferenceManager.getDefaultSharedPreferences(activity).getString("btAddress", null);
+            BluetoothDevice bluetoothDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address);
+            BluetoothSocket socket = null;
+            try {
+                final Method m = bluetoothDevice.getClass().getMethod("createRfcommSocket", int.class);
+                socket = (BluetoothSocket) m.invoke(bluetoothDevice, 1);
+            } catch (Exception e) {
+                try {
+                    socket = bluetoothDevice.createInsecureRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+                e.printStackTrace();
             }
-        } catch (IllegalArgumentException e) {
-            Log.e(TAG, "Fail to initialize recorder.");
-            activity.analyzerViews.notifyToast("Illegal recorder argument. (change source)");
-            return;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            // Check Auto-Gain-Control status.
-            if (AutomaticGainControl.isAvailable()) {
-                AutomaticGainControl agc = AutomaticGainControl.create(
-                        record.getAudioSessionId());
-                if (agc.getEnabled())
-                    Log.i(TAG, "SamplingLoop::Run(): AGC: enabled.");
-                else
-                    Log.i(TAG, "SamplingLoop::Run(): AGC: disabled.");
-            } else {
-                Log.i(TAG, "SamplingLoop::Run(): AGC: not available.");
+            BluetoothAdapter.getDefaultAdapter().cancelDiscovery();
+            SystemClock.sleep(1000);
+            try {
+                socket.connect();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        }
+            //init irecord with input stream
+            irecord = new BluetoothAccelerometerRecorder(socket);
+        } else {
+            AudioRecord record;
+            // Use the mic with AGC turned off. e.g. VOICE_RECOGNITION for measurement
+            // The buffer size here seems not relate to the delay.
+            // So choose a larger size (~1sec) so that overrun is unlikely.
+            try {
+                if (analyzerParam.audioSourceId < 1000) {
+                    record = new AudioRecord(analyzerParam.audioSourceId, analyzerParam.sampleRate, AudioFormat.CHANNEL_IN_MONO,
+                            AudioFormat.ENCODING_PCM_16BIT, analyzerParam.BYTE_OF_SAMPLE * bufferSampleSize);
+                } else {
+                    record = new AudioRecord(analyzerParam.RECORDER_AGC_OFF, analyzerParam.sampleRate, AudioFormat.CHANNEL_IN_MONO,
+                            AudioFormat.ENCODING_PCM_16BIT, analyzerParam.BYTE_OF_SAMPLE * bufferSampleSize);
+                }
+            } catch (IllegalArgumentException e) {
+                Log.e(TAG, "Fail to initialize recorder.");
+                activity.analyzerViews.notifyToast("Illegal recorder argument. (change source)");
+                return;
+            }
 
-        Log.i(TAG, "SamplingLoop::Run(): Starting recorder... \n" +
-                "  source          : " + analyzerParam.getAudioSourceName() + "\n" +
-                String.format("  sample rate     : %d Hz (request %d Hz)\n", record.getSampleRate(), analyzerParam.sampleRate) +
-                String.format("  min buffer size : %d samples, %d Bytes\n", minBytes / analyzerParam.BYTE_OF_SAMPLE, minBytes) +
-                String.format("  buffer size     : %d samples, %d Bytes\n", bufferSampleSize, analyzerParam.BYTE_OF_SAMPLE*bufferSampleSize) +
-                String.format("  read chunk size : %d samples, %d Bytes\n", readChunkSize, analyzerParam.BYTE_OF_SAMPLE*readChunkSize) +
-                String.format("  FFT length      : %d\n", analyzerParam.fftLen) +
-                String.format("  nFFTAverage     : %d\n", analyzerParam.nFFTAverage));
-        analyzerParam.sampleRate = record.getSampleRate();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                // Check Auto-Gain-Control status.
+                if (AutomaticGainControl.isAvailable()) {
+                    AutomaticGainControl agc = AutomaticGainControl.create(
+                            record.getAudioSessionId());
+                    if (agc.getEnabled())
+                        Log.i(TAG, "SamplingLoop::Run(): AGC: enabled.");
+                    else
+                        Log.i(TAG, "SamplingLoop::Run(): AGC: disabled.");
+                } else {
+                    Log.i(TAG, "SamplingLoop::Run(): AGC: not available.");
+                }
+            }
 
-        if (record.getState() == AudioRecord.STATE_UNINITIALIZED) {
-            Log.e(TAG, "SamplingLoop::run(): Fail to initialize AudioRecord()");
-            activity.analyzerViews.notifyToast("Fail to initialize recorder.");
-            // If failed somehow, leave user a chance to change preference.
-            return;
+            Log.i(TAG, "SamplingLoop::Run(): Starting recorder... \n" +
+                    "  source          : " + analyzerParam.getAudioSourceName() + "\n" +
+                    String.format("  sample rate     : %d Hz (request %d Hz)\n", record.getSampleRate(), analyzerParam.sampleRate) +
+                    String.format("  min buffer size : %d samples, %d Bytes\n", minBytes / analyzerParam.BYTE_OF_SAMPLE, minBytes) +
+                    String.format("  buffer size     : %d samples, %d Bytes\n", bufferSampleSize, analyzerParam.BYTE_OF_SAMPLE * bufferSampleSize) +
+                    String.format("  read chunk size : %d samples, %d Bytes\n", readChunkSize, analyzerParam.BYTE_OF_SAMPLE * readChunkSize) +
+                    String.format("  FFT length      : %d\n", analyzerParam.fftLen) +
+                    String.format("  nFFTAverage     : %d\n", analyzerParam.nFFTAverage));
+            analyzerParam.sampleRate = record.getSampleRate();
+
+            if (record.getState() == AudioRecord.STATE_UNINITIALIZED) {
+                Log.e(TAG, "SamplingLoop::run(): Fail to initialize AudioRecord()");
+                activity.analyzerViews.notifyToast("Fail to initialize recorder.");
+                // If failed somehow, leave user a chance to change preference.
+                return;
+            }
+
+            // Start recording
+            try {
+                record.startRecording();
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "Fail to start recording.");
+                activity.analyzerViews.notifyToast("Fail to start recording.");
+                return;
+            }
+            irecord = new AudioRecorder(record);
         }
 
         short[] audioSamples = new short[readChunkSize];
@@ -240,15 +292,6 @@ class SamplingLoop extends Thread {
             Log.i(TAG, "PCM write to file " + wavWriter.getPath());
         }
 
-        // Start recording
-        try {
-            record.startRecording();
-        } catch (IllegalStateException e) {
-            Log.e(TAG, "Fail to start recording.");
-            activity.analyzerViews.notifyToast("Fail to start recording.");
-            return;
-        }
-
         // Main loop
         // When running in this loop (including when paused), you can not change properties
         // related to recorder: e.g. audioSourceId, sampleRate, bufferSampleSize
@@ -258,7 +301,7 @@ class SamplingLoop extends Thread {
             if (analyzerParam.audioSourceId >= 1000) {
                 numOfReadShort = readTestData(audioSamples, 0, readChunkSize, analyzerParam.audioSourceId);
             } else {
-                numOfReadShort = record.read(audioSamples, 0, readChunkSize);   // pulling
+                numOfReadShort = irecord.read(audioSamples, 0, readChunkSize);   // pulling
             }
             if ( recorderMonitor.updateState(numOfReadShort) ) {  // performed a check
                 if (recorderMonitor.getLastCheckOverrun())
@@ -298,8 +341,7 @@ class SamplingLoop extends Thread {
         }
         Log.i(TAG, "SamplingLoop::Run(): Actual sample rate: " + recorderMonitor.getSampleRate());
         Log.i(TAG, "SamplingLoop::Run(): Stopping and releasing recorder.");
-        record.stop();
-        record.release();
+        irecord.stop();
         if (bSaveWavLoop) {
             Log.i(TAG, "SamplingLoop::Run(): Ending saved wav.");
             wavWriter.stop();

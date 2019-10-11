@@ -15,6 +15,7 @@
 
 package github.bewantbe.audio_analyzer_for_android;
 
+import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -23,9 +24,12 @@ import android.os.Bundle;
 import android.preference.ListPreference;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import java.util.Arrays;
+
+import github.bewantbe.audio_analyzer_for_android.Bluetooth.BluetoothScanner;
 
 // I was using an old cell phone -- API level 9 (android 2.3.6),
 // so here use PreferenceActivity instead of PreferenceFragment.
@@ -120,6 +124,24 @@ public class MyPreferences extends PreferenceActivity {
         lp.setDefaultValue(MediaRecorder.AudioSource.VOICE_RECOGNITION);
         lp.setEntries(audioSourcesName);
         lp.setEntryValues(audioSources);
+        lp.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object o) {
+                if("10".equals(o)){//VIBROMETER_VALKA
+                    BluetoothScanner.promptForBluetoothDevice(MyPreferences.this, new BluetoothScanner.OnBluetoothDeviceChosenListener(){
+                        @Override
+                        public void onBluetoothDeviceChosen(BluetoothDevice chosenDevice) {
+                            SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(MyPreferences.this).edit();
+                            editor.putString("btAddress", chosenDevice.getAddress());
+                            editor.apply();
+                            Log.i("MyPreferences","Remembered " + chosenDevice.getAddress() + " as prefered bluetooth vibrometer");
+                        }
+                    });
+                    return true;
+                }
+                return true;
+            }
+        });
 
         getPreferenceScreen().getSharedPreferences()
                 .registerOnSharedPreferenceChangeListener(prefListener);

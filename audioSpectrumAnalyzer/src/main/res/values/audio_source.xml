@@ -27,6 +27,7 @@
         <item>7</item>
         <item>8</item>
         <item>9</item>
+        <item>10</item>
     </integer-array>
 
     <string-array name="std_audio_source_name" translatable="false">
@@ -40,6 +41,7 @@
         <item>VOICE_COMMUNICATION</item>
         <item>REMOTE_SUBMIX</item>
         <item>UNPROCESSED</item>
+        <item>VIBROMETER_VALKA</item>
     </string-array>
 
     <!--API level that this source is available-->
@@ -54,6 +56,7 @@
         <item>11</item>
         <item>19</item>
         <item>24</item>
+        <item>5</item>
     </integer-array>
 
     <!--Some sources not available for third-party applications.-->
@@ -68,6 +71,7 @@
         <item>""</item>
         <item>"CAPTURE_AUDIO_OUTPUT"</item>
         <item>""</item>
+        <item>"BLUETOOTH"</item>
     </string-array>
 
     <string-array name="std_sampling_rates" translatable="false">
