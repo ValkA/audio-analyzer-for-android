@@ -183,7 +183,7 @@ class SamplingLoop extends Thread {
 
         if(analyzerParam.audioSourceId==10){
             Log.i("VIBROMETER_VALKA", "VIBROMETER_VALKA");
-            analyzerParam.sampleRate = 1000;//1000HZ by MPU6050
+            analyzerParam.sampleRate = 400;//750HZ by MPU6050
             //TODO: connect to bluetooth here (while blocking the thread)
             String address = PreferenceManager.getDefaultSharedPreferences(activity).getString("btAddress", null);
             BluetoothDevice bluetoothDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address);
@@ -196,6 +196,9 @@ class SamplingLoop extends Thread {
                     socket = bluetoothDevice.createInsecureRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
                 } catch (IOException ex) {
                     ex.printStackTrace();
+                    Log.e(TAG, "Failed to open BT socket.");
+                    activity.analyzerViews.notifyToast("Failed to open BT socket.");
+                    return;
                 }
                 e.printStackTrace();
             }
@@ -203,8 +206,11 @@ class SamplingLoop extends Thread {
             SystemClock.sleep(1000);
             try {
                 socket.connect();
-            } catch (Exception e) {
+            } catch (IOException e) {
                 e.printStackTrace();
+                Log.e(TAG, "Failed to connect to BT socket.");
+                activity.analyzerViews.notifyToast("Failed to connect to BT socket.");
+                return;
             }
             //init irecord with input stream
             irecord = new BluetoothAccelerometerRecorder(socket);
@@ -298,11 +304,19 @@ class SamplingLoop extends Thread {
         // TODO: allow change of FFT length on the fly.
         while (isRunning) {
             // Read data
-            if (analyzerParam.audioSourceId >= 1000) {
-                numOfReadShort = readTestData(audioSamples, 0, readChunkSize, analyzerParam.audioSourceId);
-            } else {
-                numOfReadShort = irecord.read(audioSamples, 0, readChunkSize);   // pulling
+
+            try {
+                if (analyzerParam.audioSourceId >= 1000) {
+                    numOfReadShort = readTestData(audioSamples, 0, readChunkSize, analyzerParam.audioSourceId);
+                } else {
+                    numOfReadShort = irecord.read(audioSamples, 0, readChunkSize);   // pulling
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to read from io.");
+                activity.analyzerViews.notifyToast("Failed to read from io.");
+                return;
             }
+
             if ( recorderMonitor.updateState(numOfReadShort) ) {  // performed a check
                 if (recorderMonitor.getLastCheckOverrun())
                     activity.analyzerViews.notifyOverrun();

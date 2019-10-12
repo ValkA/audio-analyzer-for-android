@@ -124,6 +124,7 @@ public class MyPreferences extends PreferenceActivity {
         lp.setDefaultValue(MediaRecorder.AudioSource.VOICE_RECOGNITION);
         lp.setEntries(audioSourcesName);
         lp.setEntryValues(audioSources);
+        final Preference.OnPreferenceChangeListener cb = lp.getOnPreferenceChangeListener();
         lp.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
             @Override
             public boolean onPreferenceChange(Preference preference, Object o) {
@@ -137,8 +138,10 @@ public class MyPreferences extends PreferenceActivity {
                             Log.i("MyPreferences","Remembered " + chosenDevice.getAddress() + " as prefered bluetooth vibrometer");
                         }
                     });
-                    return true;
                 }
+                SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(MyPreferences.this).edit();
+                editor.putString("audioSource", (String)o);
+                editor.apply();
                 return true;
             }
         });
